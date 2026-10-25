@@ -1,6 +1,6 @@
 using UnityEngine;
 
-public enum RoomId { Arrival, Control, Power, Water, Environmental, LifeSupport }
+public enum RoomId { Arrival, Control, Power, Sustenance, Environmental, LifeSupport }
 public enum GameStatus { Running, Won, Lost }
 public enum ActionType { CleanPanels, ReplaceCover, MaintainRecycler, RepairDome, Hydrate, Harvest, Electrolyze, HeatPump }
 
