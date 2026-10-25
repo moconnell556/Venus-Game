@@ -5,30 +5,45 @@ using UnityEngine.UI;
 
 public class InteractionController : MonoBehaviour
 {
+    [Header("Demo")]
+    public bool ignoreRooms = true;
+
     [Header("Progress UI")]
     public GameObject progressRoot;
     public Image progressFill;
     public TextMeshProUGUI progressLabel;
 
+    [Header("Feedback")]
+    public TextMeshProUGUI feedbackText;
+    public float feedbackSeconds = 2.5f;
+
     private HabitatSim sim;
     private Camera cam;
     private Interactable current;
     private float elapsed;
+    private float feedbackTimer;
 
     void Start()
     {
         sim = HabitatSim.Instance;
         cam = Camera.main;
         SetProgressVisible(false);
+        if (feedbackText != null) feedbackText.text = "";
     }
 
     void Update()
     {
+        if (feedbackTimer > 0f)
+        {
+            feedbackTimer -= Time.deltaTime;
+            if (feedbackTimer <= 0f && feedbackText != null) feedbackText.text = "";
+        }
+
         if (sim.Status != GameStatus.Running) return;
 
         if (current != null)
         {
-            if (sim.PlayerRoom != current.room)
+            if (!ignoreRooms && sim.PlayerRoom != current.room)
             {
                 CancelTask();
                 return;
@@ -37,10 +52,10 @@ public class InteractionController : MonoBehaviour
             elapsed += Time.deltaTime;
             if (elapsed >= current.duration)
             {
-                sim.Perform(current.action);
+                PerformAndReport(current);
                 EndTask();
             }
-            else
+            else if (progressFill != null)
             {
                 progressFill.fillAmount = elapsed / current.duration;
             }
@@ -61,7 +76,7 @@ public class InteractionController : MonoBehaviour
         {
             if (!hit.TryGetComponent(out Interactable item)) continue;
 
-            if (sim.PlayerRoom != item.room)
+            if (!ignoreRooms && sim.PlayerRoom != item.room)
             {
                 Debug.Log($"Go to the {item.room} room first.");
                 return;
@@ -69,19 +84,48 @@ public class InteractionController : MonoBehaviour
 
             if (item.duration <= 0f)
             {
-                if (!sim.Perform(item.action))
-                    Debug.Log($"Not enough resources for {item.label}.");
+                PerformAndReport(item);
             }
             else
             {
                 current = item;
                 elapsed = 0f;
-                progressLabel.text = item.label;
+                if (progressLabel != null) progressLabel.text = item.label;
                 SetProgressVisible(true);
             }
             return;
         }
     }
+
+    // Runs the action and shows what changed, e.g. "Cleaning panels: Solar panels 96 to 100"
+    bool PerformAndReport(Interactable item)
+    {
+        var (name, before) = Read(item.action);
+        bool ok = sim.Perform(item.action);
+        var (_, after) = Read(item.action);
+
+        if (feedbackText != null)
+        {
+            feedbackText.text = ok
+                ? $"{item.label}: {name} {before:F0} to {after:F0}"
+                : $"Not enough resources for {item.label}";
+            feedbackTimer = feedbackSeconds;
+        }
+        return ok;
+    }
+
+    (string name, float value) Read(ActionType action) => action switch
+    {
+        ActionType.CleanPanels      => ("Solar panels", sim.SolarIntegrity),
+        ActionType.ReplaceCover     => ("Solar panels", sim.SolarIntegrity),
+        ActionType.Electrolyze      => ("Oxygen", sim.Oxygen),
+        ActionType.HeatPump         => ("Temperature", sim.Temperature),
+        ActionType.Hydrate          => ("Thirst", sim.Thirst),
+        ActionType.Harvest          => ("Hunger", sim.Hunger),
+        ActionType.MaintainRecycler => ("Recycler", sim.RecyclerCondition),
+        ActionType.RepairDome       => ("Coating", sim.CoatingCondition),
+        _                           => ("", 0f)
+    };
 
     void EndTask()
     {
